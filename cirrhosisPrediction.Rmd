@@ -1,0 +1,310 @@
+---
+title: "cirrhosisPrediction"
+author: "Kanishk Kapoor"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The goal of this project is to analyze patient data and develop a predictive model to determine which factors influence survival outcomes in cirrhosis patients.
+```{r}
+library(dplyr)
+library(survival)
+library(survminer)
+library(ggplot2)
+```
+
+```{r}
+c_data <- read.csv("cirrhosis.csv", stringsAsFactors = FALSE)
+```
+
+```{r}
+View(c_data)
+```
+
+```{r}
+str(c_data)
+```
+
+```{r}
+colSums(is.na(c_data))
+```
+
+Handling Missing Categorical Data
+
+```{r}
+c_data$Drug[is.na(c_data$Drug)] <- "Unknown"
+c_data$Ascites[is.na(c_data$Ascites)] <- "Unknown"
+c_data$Hepatomegaly[is.na(c_data$Hepatomegaly)] <- "Unknown"
+c_data$Spiders[is.na(c_data$Spiders)] <- "Unknown"
+```
+```{r}
+colSums(is.na(c_data))
+```
+
+Handling Missing Numerical Data
+
+```{r}
+median_impute <- function(x) {
+  x[is.na(x)] <- median(x, na.rm = TRUE)
+  return(x)
+}
+
+c_data$Cholesterol <- median_impute(c_data$Cholesterol)
+c_data$Copper <- median_impute(c_data$Copper)
+c_data$Alk_Phos <- median_impute(c_data$Alk_Phos)
+c_data$SGOT <- median_impute(c_data$SGOT)
+c_data$Tryglicerides <- median_impute(c_data$Tryglicerides)
+c_data$Platelets <- median_impute(c_data$Platelets)
+c_data$Prothrombin <- median_impute(c_data$Prothrombin)
+
+
+```
+```{r}
+c_data$Stage[is.na(c_data$Stage)] <- 0
+c_data$Stage <- as.factor(c_data$Stage)
+```
+
+```{r}
+str(c_data)
+colSums(is.na(c_data))
+```
+
+0 in stage to imply unknown value.
+```{r}
+#from days age to years
+c_data$Age <- c_data$Age / 365
+```
+```{r}
+str(c_data)
+```
+
+```{r}
+categorical_cols <- c("Status", "Drug", "Sex", "Ascites", "Hepatomegaly", "Spiders", "Edema", "Stage")
+c_data[categorical_cols] <- lapply(c_data[categorical_cols], as.factor)
+```
+
+### Exploratory Data Analysis
+```{r}
+summary(c_data)
+```
+
+```{r}
+hist(c_data$N_Days, breaks = 30, main="Distribution of Survival Time", col = "blue")
+```
+
+#### Surival Analysis using Kaplan Meier Curve
+
+```{r}
+table(c_data$Drug)
+str(c_data$Drug)
+```
+```{r}
+c_data_s <- c_data %>% filter(c_data$Drug != "Unknown")
+table(c_data_s$Drug)
+```
+
+```{r}
+surv_obj <- Surv(c_data_s$N_Days, c_data_s$Status =="D")
+
+km_fit <- survfit(surv_obj ~ Drug, data = c_data_s)
+
+```
+```{r}
+ggsurvplot(km_fit, data = c_data_s, pval = TRUE, risk.table = TRUE, main = "Survival Probability by Drug Type", legend.title= "Drug")
+```
+Key Observations
+	1.	Survival Curves are Close Together
+	•	The two lines are overlapping for most of the time period.
+	•	This suggests no significant survival benefit from D-penicillamine compared to Placebo.
+	2.	p-value = 0.75
+	•	A p-value > 0.05 means no statistically significant difference between the two groups.
+	•	This means D-penicillamine does not significantly improve survival over Placebo.
+	3.	Long-term Survival Patterns
+	•	Both curves decline gradually, indicating a progressive disease outcome.
+	•	The survival probability at 4000+ days is low for both groups.
+
+Checking for Other Factors which may impact survival
+
+```{r}
+
+km_fit_stage <- survfit(surv_obj ~ Stage, data=c_data_s)
+ggsurvplot(km_fit_stage,
+           data= c_data_s,
+           pval= TRUE,
+           risk.table = TRUE,
+           main="Survival Probability by Cirrhosis Stage",
+           legend.title="Stage")
+```
+stage cirrhosis have the best survival rates.
+	•	Stage 2 (Green Line): Slightly lower than Stage 1 but still better than advanced stages.
+	•	Stage 3 (Blue Line): Noticeably lower survival compared to Stages 1 and 2.
+	•	Stage 4 (Purple Line): Worst survival rate—a sharp decline in survival probability, indicating that patients with advanced cirrhosis (Stage 4) have the highest mortality risk.
+
+Key Takeaways:
+
+✔️ The survival probability decreases as the cirrhosis stage increases.
+✔️ p < 0.0001 suggests that the difference in survival across stages is statistically significant.
+✔️ Medical Implication: Early detection and treatment of cirrhosis can significantly improve patient survival.
+```{r}
+km_fit_sex <- survfit(surv_obj ~ Sex, data=c_data_s)
+ggsurvplot(km_fit_sex,
+           data= c_data_s,
+           pval= TRUE,
+           risk.table = TRUE,
+           main="Survival Probability by Gender",
+           legend.title="Sex")
+```
+Key Observations:
+
+1️⃣ The red line (females) stays consistently higher than the blue line (males), indicating longer survival.
+2️⃣ The gap between curves widens over time, suggesting that males experience faster mortality rates.
+3️⃣ p = 0.039, which is statistically significant (below 0.05), meaning the difference in survival between males and females is unlikely to be due to chance.
+4️⃣ Number at risk decreases faster for males, reinforcing that they have a higher risk of mortality.
+
+Possible Medical Explanation:
+	•	Women may have better liver regeneration or respond differently to cirrhosis-related treatments.
+	•	Hormonal differences could play a role in disease progression.
+	•	Males may have more aggressive disease progression due to lifestyle factors (e.g., alcohol consumption).
+```{r}
+km_fit_Ascites<- survfit(surv_obj ~ Ascites, data=c_data_s)
+ggsurvplot(km_fit_Ascites,
+           data= c_data_s,
+           pval= TRUE,
+           risk.table = TRUE,
+           main="Survival Probability by Ascites",
+           legend.title="Ascites")
+```
+Key Observations:
+
+1️⃣ The blue line (Ascites = Yes) drops sharply, indicating much lower survival rates for patients with Ascites.
+2️⃣ The red line (Ascites = No) remains consistently higher, meaning patients without Ascites survive significantly longer.
+3️⃣ p < 0.0001, which is highly statistically significant, confirming that the difference in survival is not due to random chance.
+4️⃣ The number at risk decreases much faster for patients with Ascites (24 → 0 quickly), while those without it still have surviving patients even at 4000 days.
+
+Interpretation:
+	•	Ascites is a serious complication of cirrhosis, associated with high mortality.
+	•	Patients with Ascites might have worse liver function or higher risk of liver failure.
+	•	These findings suggest Ascites should be a key predictor in a Cox regression model.
+	
+```{r}
+km_fit_Hepatomegaly<- survfit(surv_obj ~ Hepatomegaly, data=c_data_s)
+ggsurvplot(km_fit_Hepatomegaly,
+           data= c_data_s,
+           pval= TRUE,
+           risk.table = TRUE,
+           main="Survival Probability by Hepatomegaly",
+           legend.title="Hepatomegaly")
+```
+Key Observations:
+
+1️⃣ The blue line (Hepatomegaly = Yes) drops faster, meaning patients with Hepatomegaly have poorer survival rates.
+2️⃣ The red line (Hepatomegaly = No) remains consistently higher, indicating better survival for patients without Hepatomegaly.
+3️⃣ p < 0.0001, meaning the difference is highly statistically significant and unlikely due to random variation.
+4️⃣ The number at risk table shows that survival decreases more rapidly in the Hepatomegaly = Yes group.
+
+Interpretation:
+	•	Hepatomegaly is a sign of liver disease progression, often indicating advanced cirrhosis, congestion, or liver dysfunction.
+	•	The survival curve for patients with Hepatomegaly declines sharply, suggesting it could be a key predictor in a Cox model.
+	
+```{r}
+km_fit_Spiders<- survfit(surv_obj ~ Spiders, data=c_data_s)
+ggsurvplot(km_fit_Spiders,
+           data= c_data_s,
+           pval= TRUE,
+           risk.table = TRUE,
+           main="Survival Probability by Spiders",
+           legend.title="Spiders")
+```
+	
+```{r}
+km_fit_Edema<- survfit(surv_obj ~ Edema, data=c_data_s)
+ggsurvplot(km_fit_Edema,
+           data= c_data_s,
+           pval= TRUE,
+           risk.table = TRUE,
+           main="Survival Probability by Edema",
+           legend.title="Edema")
+```
+#### Cox Proportional Hazards Model
+```{r}
+ c_data_s$Status_B <- ifelse(c_data_s$Status == "D", 1, 0)
+table(c_data_s$Status_B)  # Should now contain only 0 and 1
+```
+
+
+```{r}
+#Univariate Cox Model
+
+cox_stage <- coxph(Surv(N_Days, Status_B) ~ Stage, data= c_data_s)
+cox_ascites <- coxph(Surv(N_Days, Status_B) ~ Ascites, data = c_data_s)
+cox_hepatomegaly <- coxph(Surv(N_Days, Status_B) ~ Hepatomegaly, data = c_data_s)
+cox_spiders <- coxph(Surv(N_Days, Status_B) ~ Spiders, data = c_data_s)
+cox_edema <- coxph(Surv(N_Days, Status_B) ~ Edema, data = c_data_s)
+
+cox_bilirubin <- coxph(Surv(N_Days, Status_B) ~ Bilirubin, data=c_data_s)
+cox_albumin <- coxph(Surv(N_Days, Status_B) ~ Albumin, data = c_data_s)
+cox_platelets <- coxph(Surv(N_Days, Status_B) ~ Platelets, data = c_data_s)
+
+summary(cox_stage)
+summary(cox_ascites)
+summary(cox_hepatomegaly)
+summary(cox_spiders)
+summary(cox_edema)
+summary(cox_bilirubin)
+summary(cox_albumin)
+summary(cox_platelets)
+
+
+```
+
+```{r}
+multivariate_model <- coxph(Surv(N_Days, Status_B) ~ Stage + Ascites + Hepatomegaly + Spiders + Edema + Bilirubin + Albumin + Platelets, data = c_data_s)
+summary(multivariate_model)
+```
+
+Significant Predictors (p < 0.05)
+	1.	Stage (Stage1 & Stage2)
+	•	Stage1: HR = 0.13 (p = 0.048) → Patients in Stage1 have a significantly lower risk of death compared to Stage4.
+	•	Stage2: HR = 0.49 (p = 0.026) → Patients in Stage2 also have a reduced risk compared to Stage4.
+	2.	Edema
+	•	EdemaY: HR = 2.24 (p = 0.016) → Presence of edema increases the hazard of death by 2.24 times.
+	3.	Bilirubin
+	•	HR = 1.13 (p < 0.001) → A 1-unit increase in bilirubin is associated with a 12.7% increase in the hazard of death.
+	4.	Albumin
+	•	HR = 0.44 (p = 0.0026) → A 1-unit increase in albumin decreases the risk of death by 56%.
+
+Non-Significant Predictors (p > 0.05)
+	•	Ascites (p = 0.070): Potentially significant, but not quite below the 0.05 threshold.
+	•	Hepatomegaly, Spiders, Edema (S), Platelets: Not significant.
+
+⸻
+
+Model Performance
+	•	Concordance Index = 0.823 → Strong predictive power (closer to 1 is better).
+	•	Likelihood Ratio Test, Wald Test, Log-rank Test: All p < 2e-16 → Model is highly significant.
+	
+	 Disease Stage is a Strong Predictor
+	•	Patients in Stage 1 have the lowest risk (HR = 0.1299), meaning 87% lower risk compared to Stage 4.
+	•	Higher stages (Stage 2 & 3) also show increased risk but not as extreme as Stage 4.
+
+#### Conclusion
+
+ Ascites & Edema Significantly Impact Survival
+	•	Ascites (HR = 1.76) → 76% higher risk of death.
+	•	Edema (HR = 2.24) → More than double the risk of death.
+
+ Bilirubin is a Major Risk Factor
+	•	Each unit increase in bilirubin raises the death risk by 13% (HR = 1.13, p < 0.0001).
+	•	Higher bilirubin levels indicate poorer survival.
+
+ Albumin is Protective
+	•	Higher albumin levels reduce risk (HR = 0.44, p = 0.0026).
+	•	Suggests better liver function is linked to longer survival.
+
+ Platelets & Hepatomegaly have weaker effects
+	•	Platelets show a weak association with survival (HR = 0.9987, p = 0.203).
+	•	Hepatomegaly is not statistically significant in predicting survival.
